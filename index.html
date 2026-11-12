@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>애플 주가 고급 통계분석 대시보드</title>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Embedded data for seamless local double-click without webserver CORS issues -->
+  <script src="data.js"></script>
+  <!-- FontAwesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="dashboard-container">
+    <!-- 사이드바 / 헤더 -->
+    <header class="header">
+      <div class="header-left">
+        <i class="fa-brands fa-apple logo-icon"></i>
+        <div>
+          <h1>Apple Inc. (AAPL) 주가 통계 분석 대시보드</h1>
+          <p class="subtitle">10가지 다변량 및 시계열 통계분석 모델링 & 인터랙티브 시각화</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <label for="csvFileInput" class="btn file-btn">
+          <i class="fa-solid fa-file-csv"></i> 새 CSV/엑셀 불러오기
+        </label>
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none;">
+        <button id="resetRangeBtn" class="btn btn-secondary">
+          <i class="fa-solid fa-rotate-left"></i> 전체 기간
+        </button>
+      </div>
+    </header>
+
+    <!-- 데이터 요약 배너 및 통계 카드 -->
+    <section class="summary-cards" id="kpiCards">
+      <div class="card kpi">
+        <div class="kpi-icon"><i class="fa-solid fa-calendar-days"></i></div>
+        <div class="kpi-info">
+          <span class="label">분석 기간</span>
+          <span class="value" id="kpiPeriod">로딩 중...</span>
+          <span class="sub" id="kpiDataCount">- 개 거래일</span>
+        </div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon"><i class="fa-solid fa-arrow-trend-up"></i></div>
+        <div class="kpi-info">
+          <span class="label">최근 종가 / 전체 수익률</span>
+          <span class="value" id="kpiClose">-</span>
+          <span class="sub" id="kpiReturn">-</span>
+        </div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon"><i class="fa-solid fa-chart-line"></i></div>
+        <div class="kpi-info">
+          <span class="label">연환산 변동성 (Volatility)</span>
+          <span class="value" id="kpiVol">-</span>
+          <span class="sub" id="kpiSharpe">샤프 지수: -</span>
+        </div>
+      </div>
+      <div class="card kpi">
+        <div class="kpi-icon"><i class="fa-solid fa-shield-halved"></i></div>
+        <div class="kpi-info">
+          <span class="label">최대 낙폭 (MDD)</span>
+          <span class="value text-danger" id="kpiMdd">-</span>
+          <span class="sub" id="kpiVar">95% 일간 VaR: -</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 인터랙티브 컨트롤 패널 -->
+    <div class="control-bar">
+      <div class="control-group">
+        <label><i class="fa-solid fa-sliders"></i> 통계 필터 및 기간 프리셋:</label>
+        <div class="button-group">
+          <button class="pill-btn active" data-range="all">전체(10년)</button>
+          <button class="pill-btn" data-range="5y">최근 5년</button>
+          <button class="pill-btn" data-range="2y">최근 2년</button>
+          <button class="pill-btn" data-range="1y">최근 1년</button>
+        </div>
+      </div>
+      <div class="status-indicator">
+        <span class="dot live"></span>
+        <span id="statusText">데이터 연산 준비 완료</span>
+      </div>
+    </div>
+
+    <!-- 10가지 통계 분석 그리드 -->
+    <main class="grid-container">
+      
+      <!-- 1. 추세 및 이동평균선 분석 -->
+      <article class="card chart-card full-width">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 1</span>
+            <h3>기술적 시계열 추세 분석 (SMA 20, 60, 120일 이동평균 & 골든크로스)</h3>
+          </div>
+          <p class="description">단기(20일), 중기(60일), 장기(120일) 단순이동평균(SMA)을 산출하여 가격 추세 형성 및 변곡점을 감지합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartTrend"></canvas>
+        </div>
+      </article>
+
+      <!-- 2. 볼린저 밴드 (확률적 가격 변동성 통계) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 2</span>
+            <h3>볼린저 밴드 (Bollinger Bands, 20일 ±2σ 통계구간)</h3>
+          </div>
+          <p class="description">모평균 대비 95.4% 신뢰구간(±2 표준편차)을 기준으로 과매수/과매도 및 밴드 수축·확장 구간을 진단합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartBollinger"></canvas>
+        </div>
+      </article>
+
+      <!-- 3. 일간 로그수익률 정규분포 히스토그램 및 밀도함수 -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 3</span>
+            <h3>일간 수익률 분포 (Histogram & 왜도·첨도 통계)</h3>
+          </div>
+          <p class="description" id="descReturns">일일 수익률의 정규분포 적합성, 왜도(Skewness), 첨도(Kurtosis/Fat-tail)를 검정합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartReturnsDist"></canvas>
+        </div>
+      </article>
+
+      <!-- 4. 거래량-주가 상관관계 및 선형 회귀 분석 -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 4</span>
+            <h3>거래량 대비 주가 상관관계 및 선형 회귀분석 (OLS Regression)</h3>
+          </div>
+          <p class="description" id="descRegression">거래량(X)과 주가(Y)의 산점도와 최소자승법(OLS) 회귀선, 결정계수($R^2$) 및 피어슨 상관계수($r$).</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartRegression"></canvas>
+        </div>
+      </article>
+
+      <!-- 5. 롤링 변동성 시계열 (30일 이동 표준편차) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 5</span>
+            <h3>30일 롤링 변동성 (Rolling Volatility Cluster)</h3>
+          </div>
+          <p class="description">30일 창(Window)을 이동하며 연환산 표준편차를 측정하여 시장 리스크 및 변동성 군집(Clustering)을 분석합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartVolatility"></canvas>
+        </div>
+      </article>
+
+      <!-- 6. 최대 낙폭 (MDD: Maximum Drawdown) 분석 -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 6</span>
+            <h3>최대 낙폭 및 언더워터 차트 (Drawdown Underwater Analysis)</h3>
+          </div>
+          <p class="description">역대 고점(Peak) 대비 하락폭과 회복 소요 기간을 추적하여 다운사이드 리스크를 측정합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartDrawdown"></canvas>
+        </div>
+      </article>
+
+      <!-- 7. MACD (이동평균 수렴확산지수 & 모멘텀 오실레이터) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 7</span>
+            <h3>MACD (12, 26, 9 EMA 지수이동평균 모멘텀 통계)</h3>
+          </div>
+          <p class="description">지수이동평균(EMA) 간격의 가속도를 측정하여 추세 강도와 반전 시그널(히스토그램)을 시각화합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartMacd"></canvas>
+        </div>
+      </article>
+
+      <!-- 8. RSI (상대강도지수, 14일 웰레스 와일더 모멘텀) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 8</span>
+            <h3>RSI (Relative Strength Index, 14일 상대강도)</h3>
+          </div>
+          <p class="description">14일간 상승폭과 하락폭의 모멘텀 비율(0~100)을 통해 과매수(70+) 및 과매도(30-) 국면을 계량화합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartRsi"></canvas>
+        </div>
+      </article>
+
+      <!-- 9. 요일별/계절성 통계 (Day-of-Week Effect) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 9</span>
+            <h3>요일별 평균 수익률 및 변동성 (Day-of-Week Seasonality)</h3>
+          </div>
+          <p class="description">월요일부터 금요일까지 각 요일별 평균 일간 수익률 및 표준편차를 비교하여 캘린더 아노말리(이상현상)를 검정합니다.</p>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chartDayOfWeek"></canvas>
+        </div>
+      </article>
+
+      <!-- 10. 기술통계 요약 및 극단치 (Box Plot / Quantiles & VaR) -->
+      <article class="card chart-card">
+        <div class="card-header">
+          <div class="title-wrap">
+            <span class="badge">분석 10</span>
+            <h3>기술통계표 & 연도별 주가 범위 (5대 요약수치 & VaR 리스크)</h3>
+          </div>
+          <p class="description">평균, 표준편차, 중앙값, 사분위수(IQR), 왜도, 첨도 및 95%/99% VaR(Value at Risk) 종합 지표.</p>
+        </div>
+        <div class="chart-wrapper table-mode">
+          <div class="stats-table-container">
+            <table class="stats-table" id="statsSummaryTable">
+              <thead>
+                <tr>
+                  <th>통계 지표 (Metric)</th>
+                  <th>종가 (Close Price, $)</th>
+                  <th>일간 수익률 (Daily Return, %)</th>
+                  <th>거래량 (Volume, 주)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <!-- JS 렌더링 -->
+              </tbody>
+            </table>
+          </div>
+          <div class="chart-sub-wrapper">
+            <canvas id="chartYearlyStats"></canvas>
+          </div>
+        </div>
+      </article>
+
+    </main>
+
+    <!-- 푸터 -->
+    <footer class="footer">
+      <p>Apple Inc. Historical Stock Analysis Dashboard | 순수 HTML5 / Vanilla CSS3 / JavaScript (ES6+) 및 Chart.js로 구동</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
